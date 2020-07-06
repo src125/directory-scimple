@@ -131,9 +131,10 @@ public class UpdateRequestTest {
   @Test
   public void testPatchToUpdate() throws Exception {
     UpdateRequest<ScimUser> updateRequest = new UpdateRequest<>(registry);
-    updateRequest.initWithPatch("1234", createUser1(), createUser1PatchOps());
+    ScimUser user1 = createUser1();
+    updateRequest.initWithPatch("1234", user1, createUser1PatchOps());
         
-    assertThrows(UnsupportedOperationException.class, () -> updateRequest.getResource());
+    assertEquals(user1, updateRequest.getResource());
   }
 
   @Test

@@ -130,11 +130,15 @@ public class UpdateRequest<T extends ScimResource> {
       throw new IllegalStateException("UpdateRequest was not initialized");
     }
 
-    if (resource != null) {
-      return resource;
+    if (resource == null) {
+      try {
+        resource = applyPatchOperations();
+      } catch (JsonProcessingException e) {
+        throw new IllegalStateException("Error applying the patch operations", e);
+      }
     }
-
-    return applyPatchOperations();
+    
+    return resource;
   }
 
   public List<PatchOperation> getPatchOperations() {
@@ -153,7 +157,7 @@ public class UpdateRequest<T extends ScimResource> {
     return patchOperations;
   }
 
-  private void sortMultiValuedCollections(Object obj1, Object obj2, AttributeContainer ac) throws IllegalArgumentException, IllegalAccessException {
+  private void sortMultiValuedCollections(Object obj1, Object obj2, AttributeContainer ac) throws IllegalAccessException {
     for (Attribute attribute : ac.getAttributes()) {
       Field field = attribute.getField();
       if (attribute.isMultiValued()) {
@@ -194,8 +198,70 @@ public class UpdateRequest<T extends ScimResource> {
     return set1;
   }
 
-  private T applyPatchOperations() {
-    throw new java.lang.UnsupportedOperationException("PATCH operations are not implemented at this time.");
+  @SuppressWarnings("unchecked")
+  private T applyPatchOperations() throws JsonProcessingException {
+    //Create a Jackson ObjectMapper that reads JaxB annotations
+    ObjectMapper objMapper = getJaxBObjectMapper();
+    
+    // convert the original ScimResource to a JsonNode
+    JsonNode resourceJsonNode = objMapper.valueToTree(resource);
+    nullEmptyLists(resourceJsonNode);
+    
+    for (PatchOperation patchOperation : patchOperations) {
+      System.out.println("patchOperation as string: " + patchOperation.toString());
+      
+      // examine operation type and act accordingly
+      switch (patchOperation.getOperation()) {
+        case ADD:
+          processAddPatchOp(resourceJsonNode, patchOperation);
+          break;
+          
+        case REMOVE:
+          processRemovePatchOp(resourceJsonNode, patchOperation);
+          break;
+          
+        case REPLACE:
+          processRemovePatchOp(resourceJsonNode, patchOperation);
+          break;
+      }
+    }
+    
+    // convert altered json back into SCIM resource
+    return (T) objMapper.readValue(resourceJsonNode.asText(), ScimResource.class);
+  }
+  
+  void processAddPatchOp(JsonNode resourceJsonNode, PatchOperation patchOperation) {
+    // convert path into string
+    
+    // put the value of the patch operation at the path given
+  }
+  
+  void processRemovePatchOp(JsonNode resourceJsonNode, PatchOperation patchOperation) {
+    // convert path into string
+    
+    // remove the value of the patch operation at the path given
+  }
+  
+  void processReplacePatchOp(JsonNode resourceJsonNode, PatchOperation patchOperation) {
+    // convert path into string
+    
+    // remove the value of the patch operation at the path given
+  }
+  
+  private ObjectMapper getJaxBObjectMapper() {
+    //Create a Jackson ObjectMapper that reads JaxB annotations
+    ObjectMapper objMapper = new ObjectMapper();
+    JaxbAnnotationModule jaxbAnnotationModule = new JaxbAnnotationModule();
+    objMapper.registerModule(jaxbAnnotationModule);
+    objMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    
+    AnnotationIntrospector jaxbIntrospector = new JaxbAnnotationIntrospector(objMapper.getTypeFactory());
+    AnnotationIntrospector jacksonIntrospector = new JacksonAnnotationIntrospector();
+    AnnotationIntrospector pair = new AnnotationIntrospectorPair(jacksonIntrospector, jaxbIntrospector);
+    
+    objMapper.setAnnotationIntrospector(pair);
+    
+    return objMapper;
   }
   
   /**
@@ -236,9 +302,9 @@ public class UpdateRequest<T extends ScimResource> {
     }
   }
 
-  private List<PatchOperation> createPatchOperations() throws IllegalArgumentException, IllegalAccessException, JsonProcessingException {
-
+  private List<PatchOperation> createPatchOperations() throws IllegalAccessException, JsonProcessingException {
     sortMultiValuedCollections(this.original, this.resource, schema);
+    
     Map<String, ScimExtension> originalExtensions = this.original.getExtensions();
     Map<String, ScimExtension> resourceExtensions = this.resource.getExtensions();
     Set<String> keys = new HashSet<>();
@@ -253,14 +319,7 @@ public class UpdateRequest<T extends ScimResource> {
     }
 
     //Create a Jackson ObjectMapper that reads JaxB annotations
-    ObjectMapper objMapper = new ObjectMapper();
-    JaxbAnnotationModule jaxbAnnotationModule = new JaxbAnnotationModule();
-    objMapper.registerModule(jaxbAnnotationModule);
-    objMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-    AnnotationIntrospector jaxbIntrospector = new JaxbAnnotationIntrospector(objMapper.getTypeFactory());
-    AnnotationIntrospector jacksonIntrospector = new JacksonAnnotationIntrospector();
-    AnnotationIntrospector pair = new AnnotationIntrospectorPair(jacksonIntrospector, jaxbIntrospector);
-    objMapper.setAnnotationIntrospector(pair);
+    ObjectMapper objMapper = getJaxBObjectMapper();
     
     JsonNode node1 = objMapper.valueToTree(original);
     nullEmptyLists(node1);
@@ -268,30 +327,18 @@ public class UpdateRequest<T extends ScimResource> {
     nullEmptyLists(node2);
     JsonNode differences = JsonDiff.asJson(node1, node2);
     
-    
-    /*
-    Commenting out debug statement to prevent PII from appearing in log
-    ObjectWriter writer = objMapper.writerWithDefaultPrettyPrinter();
     try {
-      log.debug("Original: "+writer.writeValueAsString(node1));
-      log.debug("Resource: "+writer.writeValueAsString(node2));
-    } catch (IOException e) {
-      
-    }*/
-
-    /*try {
       log.debug("Differences: " + objMapper.writerWithDefaultPrettyPrinter().writeValueAsString(differences));
     } catch (JsonProcessingException e) {
       log.debug("Unable to debug differences: ", e);
-    }*/
-
+    }
+    
     List<PatchOperation> patchOps = convertToPatchOperations(differences);
-
-    /*try {
+    try {
       log.debug("Patch Ops: " + objMapper.writerWithDefaultPrettyPrinter().writeValueAsString(patchOps));
     } catch (JsonProcessingException e) {
       log.debug("Unable to debug patch ops: ", e);
-    }*/
+    }
 
     return patchOps;
   }
@@ -303,11 +350,13 @@ public class UpdateRequest<T extends ScimResource> {
     return JsonDiff.asJson(node1, node2);
   }
 
-  List<PatchOperation> convertToPatchOperations(JsonNode node) throws IllegalArgumentException, IllegalAccessException, JsonProcessingException {
+  List<PatchOperation> convertToPatchOperations(JsonNode node) throws IllegalAccessException, JsonProcessingException {
     List<PatchOperation> operations = new ArrayList<>();
     if (node == null) {
       return Collections.emptyList();
     }
+
+    log.debug("convertToPatchOperations: node = " + node.asText());
 
     if (!(node instanceof ArrayNode)) {
       throw new RuntimeException("Expecting an instance of a ArrayNode, but got: " + node.getClass());
@@ -329,8 +378,9 @@ public class UpdateRequest<T extends ScimResource> {
     return operations;
   }
 
-  private List<PatchOperation> convertNodeToPatchOperations(String operationNode, String diffPath, JsonNode valueNode) throws IllegalArgumentException, IllegalAccessException, JsonProcessingException {
-    log.info(operationNode + ", " + diffPath);
+  private List<PatchOperation> convertNodeToPatchOperations(String operationNode, String diffPath, JsonNode valueNode) throws IllegalAccessException, JsonProcessingException {
+    log.info("convertNodeToPatchOperations: " + operationNode + ", " + diffPath);
+
     List<PatchOperation> operations = new ArrayList<>();
     PatchOperation.Type patchOpType = PatchOperation.Type.valueOf(operationNode.toUpperCase());
 
@@ -444,7 +494,7 @@ public class UpdateRequest<T extends ScimResource> {
     if (!attributeReferenceList.isEmpty()) {
       Object value = determineValue(patchOpType, valueNode, parseData);
       
-      if (value != null && value instanceof ArrayList) {
+      if (value instanceof ArrayList) {
         List<Object> objList = (List<Object>)value;
         
         if (!objList.isEmpty()) {
@@ -560,7 +610,7 @@ public class UpdateRequest<T extends ScimResource> {
       }
     }
 
-    public void traverseObjects(String pathPart, Attribute attribute) throws IllegalArgumentException, IllegalAccessException {
+    public void traverseObjects(String pathPart, Attribute attribute) throws IllegalAccessException {
       originalObject = lookupAttribute(originalObject, ac, pathPart);
       resourceObject = lookupAttribute(resourceObject, ac, pathPart);
       ac = attribute;
@@ -612,7 +662,7 @@ public class UpdateRequest<T extends ScimResource> {
       return list.get(index);
     }
 
-    private Object lookupAttribute(Object object, AttributeContainer ac, String attributeName) throws IllegalArgumentException, IllegalAccessException {
+    private Object lookupAttribute(Object object, AttributeContainer ac, String attributeName) throws IllegalAccessException {
       if (object == null) {
         return null;
       }

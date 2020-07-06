@@ -38,9 +38,7 @@ public class ValuePathExpression implements FilterExpression {
   }
 
   public static ValuePathExpression fromFilterExpression(AttributeReference attrRef, FilterExpression attributeExpression) throws FilterParseException {
-    ValuePathExpression vpe = new ValuePathExpression(attrRef, attributeExpression);
-
-    return vpe;
+    return new ValuePathExpression(attrRef, attributeExpression);
   }
 
   public static ValuePathExpression fromFilterExpression(String attribute, FilterExpression expression) throws FilterParseException {

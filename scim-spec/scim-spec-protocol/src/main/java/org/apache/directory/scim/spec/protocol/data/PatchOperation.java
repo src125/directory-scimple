@@ -32,7 +32,7 @@ import lombok.EqualsAndHashCode;
 
 @Data
 @EqualsAndHashCode
-@XmlType(propOrder={"opreration", "path", "value"})
+@XmlType
 @XmlAccessorType(XmlAccessType.NONE)
 public class PatchOperation {
   
